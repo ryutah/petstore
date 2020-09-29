@@ -14,7 +14,22 @@ type Pet struct {
 	ID        PetID     `validate:"required"`
 	Category  *Category `validate:"required"`
 	Name      string    `validate:"required"`
-	PhotoURLs []string  `validate:"required"`
+	PhotoURLs []string
 	Tags      []*Tag
 	Status    PetStatus `validate:"required"`
+}
+
+func NewPet(id PetID, category *Category, name string, photoURLs []string, tags []*Tag, status PetStatus) (*Pet, error) {
+	pet := Pet{
+		ID:        id,
+		Category:  category,
+		Name:      name,
+		PhotoURLs: photoURLs,
+		Tags:      tags,
+		Status:    status,
+	}
+	if err := validate(pet); err != nil {
+		return nil, err
+	}
+	return &pet, nil
 }
