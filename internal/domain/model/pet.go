@@ -11,10 +11,10 @@ const (
 type PetID int64
 
 type Pet struct {
-	ID        PetID
-	Category  *Category
-	Name      string
-	PhotoURLs []string
+	ID        PetID     `validate:"required"`
+	Category  *Category `validate:"required"`
+	Name      string    `validate:"required"`
+	PhotoURLs []string  `validate:"required"`
 	Tags      []*Tag
-	Status    PetStatus
+	Status    PetStatus `validate:"required"`
 }
