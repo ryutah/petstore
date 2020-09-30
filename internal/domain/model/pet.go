@@ -33,3 +33,23 @@ func NewPet(id PetID, category *Category, name string, photoURLs []string, tags 
 	}
 	return &pet, nil
 }
+
+func (p *Pet) Rename(name string) error {
+	newPet := *p
+	newPet.Name = name
+	if err := validate(newPet); err != nil {
+		return err
+	}
+	*p = newPet
+	return nil
+}
+
+func (p *Pet) ChangePhotos(photoURLs []string) error {
+	newPet := *p
+	newPet.PhotoURLs = photoURLs
+	if err := validate(newPet); err != nil {
+		return err
+	}
+	*p = newPet
+	return nil
+}

@@ -5,7 +5,6 @@ import (
 
 	"github.com/ryutah/petstore/internal/domain/model"
 	"github.com/ryutah/petstore/internal/domain/repository"
-	"github.com/ryutah/petstore/internal/errors"
 )
 
 // Defenitions for Pet#Add
@@ -23,13 +22,12 @@ type (
 	}
 
 	PetAddInputPort interface {
-		Add(context.Context, PetAddRequest, PetAddOutputPort)
+		Add(context.Context, PetAddRequest, PetAddOutputPort) (succeeded bool)
 	}
 
 	PetAddOutputPort interface {
-		Suceceded(context.Context)
-		InvalidInput(context.Context)
-		ServerError(context.Context)
+		errorOutputPort
+		Succeeded(context.Context)
 	}
 )
 
@@ -41,6 +39,69 @@ func (p PetAddRequest) tagIDs() []model.TagID {
 	return ids
 }
 
+type (
+	PetFindRequest struct {
+		ID int64
+	}
+
+	PetFindResult struct {
+		ID       int64
+		Name     string
+		Category struct {
+			ID   int64
+			Name string
+		}
+		PhotoURLs []string
+		Tags      []struct {
+			ID   int64
+			Name string
+		}
+		Status string
+	}
+
+	PetFindInputPort interface {
+		Find(context.Context, PetFindRequest, PetFindOutputPort) (succeeded bool)
+	}
+
+	PetFindOutputPort interface {
+		errorOutputPort
+		Succeeded(context.Context, PetFindResult)
+	}
+)
+
+func newPetFindResult(pet model.Pet) PetFindResult {
+	ret := PetFindResult{
+		ID:        int64(pet.ID),
+		Name:      pet.Name,
+		PhotoURLs: pet.PhotoURLs,
+		Status:    string(pet.Status),
+	}
+	if pet.Category != nil {
+		ret.Category = struct {
+			ID   int64
+			Name string
+		}{
+			ID:   int64(pet.Category.ID),
+			Name: pet.Category.Name,
+		}
+	}
+
+	tags := make([]struct {
+		ID   int64
+		Name string
+	}, len(pet.Tags))
+	for i, tag := range pet.Tags {
+		tags[i] = struct {
+			ID   int64
+			Name string
+		}{
+			ID:   int64(tag.ID),
+			Name: tag.Name,
+		}
+	}
+	return ret
+}
+
 type Pet struct {
 	repository struct {
 		category repository.Category
@@ -49,42 +110,48 @@ type Pet struct {
 	}
 }
 
-var _ PetAddInputPort = (*Pet)(nil)
+var (
+	_ PetAddInputPort  = (*Pet)(nil)
+	_ PetFindInputPort = (*Pet)(nil)
+)
 
-func (p *Pet) Add(ctx context.Context, req PetAddRequest, out PetAddOutputPort) {
-	handleError := func(err error) {
-		if errors.Is(err, errors.ErrNoSuchEntity) || errors.Is(err, errors.ErrInvalidInput) {
-			out.InvalidInput(ctx)
-		} else {
-			out.ServerError(ctx)
-		}
-	}
+func (p *Pet) Add(ctx context.Context, req PetAddRequest, out PetAddOutputPort) (succeeded bool) {
+	handleNoSuchEntity := errorHandlerFunc(func(ctx context.Context, err error, out errorOutputPort) {
+		out.InvalidInput(ctx)
+	})
 
 	category, err := p.repository.category.Get(ctx, model.CategoryID(req.Category.ID))
 	if err != nil {
-		handleError(err)
-		return
+		return handleError(ctx, err, out, withNoSuchEntityFunc(handleNoSuchEntity))
 	}
 	tags, err := p.repository.tag.GetMulti(ctx, req.tagIDs())
 	if err != nil {
-		handleError(err)
-		return
+		return handleError(ctx, err, out, withNoSuchEntityFunc(handleNoSuchEntity))
 	}
+
 	petID, err := p.repository.pet.NextID(ctx)
 	if err != nil {
-		handleError(err)
-		return
+		return handleError(ctx, err, out)
 	}
 	newPet, err := model.NewPet(petID, category, req.Name, req.PhotoURLs, tags, model.PetStatus(req.Status))
 	if err != nil {
-		handleError(err)
-		return
+		return handleError(ctx, err, out)
 	}
 
 	if err := p.repository.pet.Store(ctx, *newPet); err != nil {
-		handleError(err)
-		return
+		return handleError(ctx, err, out)
 	}
 
-	out.Suceceded(ctx)
+	out.Succeeded(ctx)
+	return true
+}
+
+func (p *Pet) Find(ctx context.Context, req PetFindRequest, out PetFindOutputPort) (succeeded bool) {
+	pet, err := p.repository.pet.Get(ctx, model.PetID(req.ID))
+	if err != nil {
+		return handleError(ctx, err, out)
+	}
+
+	out.Succeeded(ctx, newPetFindResult(*pet))
+	return true
 }
